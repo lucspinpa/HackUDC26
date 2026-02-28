@@ -1,0 +1,10 @@
+node_modules/
+__pycache__/
+venv/
+.env
+uploads/
+database.json
+search_index.json
+.DS_Store
+dist/
+
