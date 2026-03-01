@@ -195,9 +195,22 @@ async def upload(
     mode: Optional[str] = Form("ask")
 ):
     file_content = await file.read()
+    file_hash = hashlib.sha256(file_content).hexdigest()[:12]
     db = load_json(DB_FILE)
     
-    existing = next((f for f in db if f.get("name") == file.filename), None)
+    # 1. Buscar si existe por nombre o por contenido (hash) para heredar IA
+    existing_by_name = next((f for f in db if f.get("name") == file.filename), None)
+    existing_by_hash = next((f for f in db if f.get("file_hash") == file_hash), None)
+
+    # Intentar capturar metadatos de IA de cualquier versión previa
+    herencia_ia = None
+    referencia = existing_by_name or existing_by_hash
+    if referencia:
+        herencia_ia = {
+            "type": referencia.get("type"),
+            "keywords": referencia.get("keywords"),
+            "summary": referencia.get("summary")
+        }
 
     def generar_nombre(nombre, existentes):
         base, ext = os.path.splitext(nombre)
@@ -205,28 +218,38 @@ async def upload(
         while any(f.get("name") == f"{base}({i}){ext}" for f in existentes): i += 1
         return f"{base}({i}){ext}"
 
-    if existing and mode == "ask":
+    # Lógica de conflicto de nombres
+    if existing_by_name and mode == "ask":
         raise HTTPException(status_code=409, detail="DUPLICATE_NAME")
 
-    if existing and mode == "replace":
-        db = [f for f in db if f.get("id") != existing["id"]]
-        save_json(SEARCH_INDEX_FILE, [s for s in load_json(SEARCH_INDEX_FILE) if s.get("file_id") != existing["id"]])
+    if existing_by_name and mode == "replace":
+        db = [f for f in db if f.get("id") != existing_by_name["id"]]
+        save_json(SEARCH_INDEX_FILE, [s for s in load_json(SEARCH_INDEX_FILE) if s.get("file_id") != existing_by_name["id"]])
     
-    if existing and mode == "rename":
+    if existing_by_name and mode == "rename":
         file.filename = generar_nombre(file.filename, db)
 
-    file_hash = hashlib.sha256(file_content).hexdigest()[:12]
+    # Preparar guardado físico
     db_id = str(uuid.uuid4())[:8]
-    
     ext_orig = os.path.splitext(file.filename)[1]
     final_path = os.path.join(UPLOAD_DIR, f"{file_hash}{ext_orig}")
     
-    with open(final_path, "wb") as b:
-        b.write(file_content)
+    if not os.path.exists(final_path):
+        with open(final_path, "wb") as b:
+            b.write(file_content)
     
+    # 2. PROCESAMIENTO INTELIGENTE O HERENCIA
     raw_text = extraer_a_string(final_path)
     clean_text = re.sub(r'\s+', ' ', raw_text).strip()
-    tipo, keywords, resumen = analizar_ia_llama(clean_text)
+
+    if herencia_ia:
+        # Si ya conocemos el archivo, no molestamos a Ollama
+        tipo, keywords, resumen = herencia_ia["type"], herencia_ia["keywords"], herencia_ia["summary"]
+        print(f"♻️ Heredando metadatos para: {file.filename}")
+    else:
+        # Si es nuevo, procesamos con IA
+        tipo, keywords, resumen = analizar_ia_llama(clean_text)
+        print(f"🧠 Procesando con IA: {file.filename}")
     
     createdAt = datetime.fromtimestamp(int(lastModified)/1000.0).isoformat() if lastModified else datetime.now().isoformat()
     
@@ -245,6 +268,7 @@ async def upload(
     db.append(meta)
     save_json(DB_FILE, db)
 
+    # Indexar para búsqueda semántica
     s_db = load_json(SEARCH_INDEX_FILE)
     chunks = [clean_text[i:i+1000] for i in range(0, len(clean_text), 1000)]
     for i, c in enumerate(chunks):
