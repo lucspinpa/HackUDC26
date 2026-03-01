@@ -1,32 +1,31 @@
-// App.jsx  (archivo completo, con SOLO los cambios necesarios para la ordenación)
-
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  Folder,
-  Plus,
-  Search,
-  Trash2,
-  FileText,
-  WifiOff,
-  Loader2,
-  BrainCircuit,
-  Quote,
-  Clock,
-  HardDrive,
-  AlertTriangle,
-  X,
-  Eye,
-  Filter,
-  ArrowUpDown   // ← NUEVO
+import { 
+  Folder, Plus, Search, Trash2, FileText, WifiOff, 
+  Loader2, BrainCircuit, Sparkles, Quote, Tags, CheckCircle2,
+  FileSearch, Filter, Clock, HardDrive, AlertTriangle, X, Eye,
+  Palette, Sun, Moon, ArrowUpDown, Cpu, FileSpreadsheet, 
+  FileCode, FileBox, Copy, RefreshCw, ChevronRight, Users
 } from 'lucide-react';
 
-// DETECCIÓN AUTOMÁTICA DE IP
-const getApiUrl = () => {
-  const hostname = window.location.hostname;
-  return `http://${hostname}:8000`;
+// DETECCIÓN DINÁMICA DE IP PARA RED LOCAL
+const API_URL = `http://${window.location.hostname}:8000`;
+
+// CONFIGURACIÓN DE COLORES DE ACENTO
+const THEMES = {
+  emerald: { name: 'Esmeralda', bg: 'bg-emerald-500', text: 'text-emerald-500', border: 'border-emerald-500', ring: 'focus:ring-emerald-200', shadow: 'shadow-emerald-100' },
+  blue: { name: 'Océano', bg: 'bg-blue-600', text: 'text-blue-600', border: 'border-blue-600', ring: 'focus:ring-blue-200', shadow: 'shadow-blue-100' },
+  purple: { name: 'Violeta', bg: 'bg-purple-600', text: 'text-purple-600', border: 'border-purple-600', ring: 'focus:ring-purple-200', shadow: 'shadow-purple-100' },
+  rose: { name: 'Rosa', bg: 'bg-rose-500', text: 'text-rose-500', border: 'border-rose-500', ring: 'focus:ring-rose-200', shadow: 'shadow-rose-100' },
+  amber: { name: 'Ámbar', bg: 'bg-amber-500', text: 'text-amber-500', border: 'border-amber-500', ring: 'focus:ring-amber-200', shadow: 'shadow-amber-100' },
 };
 
-const API_URL = getApiUrl();
+// OPCIONES DE FONDO ADAPTATIVAS
+const BACKGROUNDS = [
+  { id: 'slate', name: 'Gris Profesional', class: 'bg-slate-50', text: 'text-slate-900', card: 'bg-white', border: 'border-slate-100', input: 'bg-white' },
+  { id: 'white', name: 'Blanco Puro', class: 'bg-white', text: 'text-slate-900', card: 'bg-white', border: 'border-slate-100', input: 'bg-slate-50' },
+  { id: 'cream', name: 'Crema Suave', class: 'bg-[#FAF9F6]', text: 'text-slate-900', card: 'bg-white', border: 'border-orange-50', input: 'bg-white' },
+  { id: 'dark', name: 'Modo Noche', class: 'bg-slate-950', text: 'text-slate-100', card: 'bg-slate-900', border: 'border-slate-800', input: 'bg-slate-800' },
+];
 
 export default function App() {
   const [files, setFiles] = useState([]);
@@ -37,14 +36,28 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
-
-  // ───────────── NUEVO (ordenación)
+  
+  // ESTADOS DE ORDENACIÓN
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [sortBy, setSortBy] = useState(null); // 'title' | 'date' | 'size'
   const [sortDir, setSortDir] = useState('asc'); // asc | desc
-  // ─────────────
 
+  // ESTADOS DE PERSONALIZACIÓN
+  const [currentTheme, setCurrentTheme] = useState('emerald');
+  const [currentBg, setCurrentBg] = useState(BACKGROUNDS[0]);
+  const [showPalette, setShowPalette] = useState(false);
+
+  // MODALES
+  const [deleteModal, setDeleteModal] = useState({ show: false, id: null, name: "" });
+  const [duplicateModal, setDuplicateModal] = useState({ show: false, file: null });
+
+  // VARIABLES DERIVADAS PARA LOS ESTILOS
+  const theme = THEMES[currentTheme];
+  const isDark = currentBg.id === 'dark';
   const fileInputRef = useRef(null);
+
+  // --- LISTA DE AUTORES (Modificable) ---
+  const autores = "Lucas Piñeiro, Alba Pérez, Saray López y Hugo Sánchez"; 
 
   const fetchFiles = async () => {
     try {
@@ -53,8 +66,8 @@ export default function App() {
         setFiles(await response.json());
         setIsConnected(true);
       }
-    } catch {
-      setIsConnected(false);
+    } catch { 
+      setIsConnected(false); 
     }
   };
 
@@ -65,9 +78,7 @@ export default function App() {
       if (searchTerm.trim().length >= 1) {
         setIsSearching(true);
         try {
-          const response = await fetch(
-            `${API_URL}/semantic-search?q=${encodeURIComponent(searchTerm)}&filter=${activeFilter}`
-          );
+          const response = await fetch(`${API_URL}/semantic-search?q=${encodeURIComponent(searchTerm)}&filter=${activeFilter}`);
           if (response.ok) setSemanticResults(await response.json());
         } finally { setIsSearching(false); }
       } else { setSemanticResults([]); }
@@ -75,72 +86,78 @@ export default function App() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, activeFilter]);
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
+  // NUEVA FUNCIÓN DE SUBIDA CON GESTIÓN DE DUPLICADOS (MODAL)
+  const processUpload = async (file, mode = "ask") => {
     if (!file) return;
-
     setIsUploading(true);
     setErrorMessage("");
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("lastModified", file.lastModified.toString());
+    formData.append("mode", mode);
 
-    const upload = async (mode) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('lastModified', file.lastModified.toString());
-      formData.append('mode', mode);
-      const response = await fetch(`${API_URL}/upload`, { method: 'POST', body: formData });
-      if (response.ok) {
+    try {
+      const res = await fetch(`${API_URL}/upload`, { method: "POST", body: formData });
+      if (res.status === 409) {
+        setDuplicateModal({ show: true, file });
+      } else if (res.ok) {
         await fetchFiles();
         if (fileInputRef.current) fileInputRef.current.value = "";
-      } else if (response.status === 409) {
-        const data = await response.json();
-        if (data.detail === "DUPLICATE_NAME") {
-          const reemplazar = window.confirm("Este archivo ya existe, ¿desea reemplazarlo?");
-          if (reemplazar) await upload("replace");
-          else await upload("rename");
-        } else if (data.detail === "DUPLICATE_HASH") {
-          window.alert("Este contenido ya está registrado");
-        } else {
-          setErrorMessage(data.detail || "Error desconocido al subir archivo");
-        }
+        setDuplicateModal({ show: false, file: null });
       } else {
-        setErrorMessage("Error desconocido al subir archivo");
+        const data = await res.json();
+        setErrorMessage(data.detail || "Error al subir documento.");
       }
-    };
-
-    await upload("ask");
-    setIsUploading(false);
+    } catch { 
+      setErrorMessage("Error de conexión con el servidor central."); 
+    } finally { 
+      setIsUploading(false); 
+    }
   };
 
   const handleOpenFile = async (id) => {
-    const baseId = id.includes('_') ? id.split('_')[0] : id;
+    try { await fetch(`${API_URL}/open/${id}`, { method: 'POST' }); }
+    catch { setErrorMessage("Apertura física solo disponible en el servidor local."); }
+  };
+
+  // NUEVA FUNCIÓN PARA CONFIRMAR EL BORRADO
+  const confirmDelete = async () => {
     try {
-      await fetch(`${API_URL}/open/${baseId}`, { method: 'POST' });
+      const res = await fetch(`${API_URL}/files/${deleteModal.id}`, { method: 'DELETE' });
+      if (res.ok) { 
+        fetchFiles(); 
+        setSearchTerm(""); 
+      } else {
+        setErrorMessage("No se pudo eliminar el archivo.");
+      }
     } catch {
-      setErrorMessage("No se puede abrir el archivo físicamente desde un dispositivo remoto. Solo funciona en el servidor central.");
+      setErrorMessage("Verifica la conexión con el servidor.");
+    } finally { 
+      setDeleteModal({ show: false, id: null, name: "" }); 
     }
   };
 
-  const deleteFile = async (id) => {
-    const baseId = id.includes('_') ? id.split('_')[0] : id;
-    const res = await fetch(`${API_URL}/files/${baseId}`, { method: 'DELETE' });
-    if (res.ok) {
-      fetchFiles();
-      setSearchTerm("");
-    }
+  // ÍCONOS DINÁMICOS
+  const getFileIcon = (ext) => {
+    const e = ext?.toLowerCase();
+    const size = "w-7 h-7";
+    if (e === 'pdf') return <FileText className={`${size} text-red-500`} />;
+    if (e === 'docx' || e === 'doc') return <FileText className={`${size} text-blue-500`} />;
+    if (e === 'xlsx' || e === 'xls') return <FileSpreadsheet className={`${size} text-emerald-500`} />;
+    if (e === 'csv') return <FileCode className={`${size} text-orange-500`} />;
+    if (e === 'txt' || e === 'md') return <FileText className={`${size} text-slate-400`} />;
+    return <FileBox className={`${size} text-slate-400`} />;
   };
 
   const isQuerying = searchTerm.trim().length >= 1;
-
-  const listaAVisualizarBase = isQuerying
-    ? semanticResults
+  const listaAVisualizarBase = isQuerying 
+    ? semanticResults 
     : files.filter(f => activeFilter === "todos" || f.extension?.toLowerCase() === activeFilter.toLowerCase());
 
-  // ───────────── NUEVO: ordenación
+  // LÓGICA DE ORDENACIÓN
   const ordenar = (lista) => {
     if (!sortBy) return lista;
-
     const copia = [...lista];
-
     copia.sort((a, b) => {
       let va, vb;
 
@@ -159,7 +176,6 @@ export default function App() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1;
       return 0;
     });
-
     return copia;
   };
 
@@ -174,152 +190,288 @@ export default function App() {
     }
     setSortMenuOpen(false);
   };
-  // ─────────────
 
-  const formatFecha = (dateStr) => {
-    if (!dateStr) return "N/A";
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const formatFechaOriginal = (isoStr) => {
+    if (!isoStr) return "N/A";
+    const d = new Date(isoStr);
+    return d.toLocaleDateString('es-ES', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
   };
 
   return (
-    <div className="min-h-screen bg-[#F1F5F9] text-slate-900 p-6 md:p-12 font-sans antialiased text-left">
-      <div className="max-w-4xl mx-auto">
-        {errorMessage && (
-          <div className="mb-6 p-4 bg-orange-50 border-l-4 border-orange-500 rounded-xl shadow-sm flex items-center justify-between text-orange-800">
-            <div className="flex items-center gap-3 text-xs font-bold uppercase">
-              <AlertTriangle className="w-5 h-5 text-orange-500" /> {errorMessage}
+    <div className={`min-h-screen transition-all duration-500 ${currentBg.class} ${currentBg.text} p-6 md:p-12 font-sans antialiased text-left relative flex flex-col`}>
+      
+      {/* MODAL DUPLICADOS */}
+      {duplicateModal.show && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in">
+          <div className={`${isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-100 text-slate-900'} rounded-[40px] p-10 max-w-md w-full shadow-2xl border transform animate-in zoom-in-95`}>
+            <div className={`w-20 h-20 rounded-3xl ${theme.bg} bg-opacity-10 flex items-center justify-center mb-8 mx-auto`}>
+              <RefreshCw className={`w-10 h-10 ${theme.text}`} />
             </div>
-            <button onClick={() => setErrorMessage("")} className="p-1 hover:bg-orange-100 rounded-full transition-colors">
-              <X className="w-4 h-4" />
-            </button>
+            <h2 className="text-2xl font-black text-center mb-4 uppercase tracking-tighter">Archivo Duplicado</h2>
+            <p className="text-center opacity-60 text-sm mb-10 leading-relaxed">
+              El archivo <span className="font-bold underline">"{duplicateModal.file?.name}"</span> ya existe en tu nube. ¿Qué prefieres hacer?
+            </p>
+            <div className="space-y-3">
+              <button onClick={() => processUpload(duplicateModal.file, "replace")} className={`w-full py-5 ${theme.bg} text-white rounded-3xl font-black uppercase text-xs shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3`}>
+                <Trash2 className="w-4 h-4" /> Reemplazar el actual
+              </button>
+              <button onClick={() => processUpload(duplicateModal.file, "rename")} className={`w-full py-5 ${isDark ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200'} rounded-3xl font-black uppercase text-xs active:scale-95 transition-all flex items-center justify-center gap-3`}>
+                <Copy className="w-4 h-4" /> Guardar ambos (Copia)
+              </button>
+              <button onClick={() => setDuplicateModal({ show: false, file: null })} className="w-full py-4 opacity-40 text-[10px] font-black uppercase hover:opacity-100">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL BORRADO */}
+      {deleteModal.show && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+          <div className={`${isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-100 text-slate-900'} rounded-[32px] p-8 max-w-sm w-full shadow-2xl border transform animate-in zoom-in-95`}>
+            <div className="bg-red-50 w-16 h-16 rounded-2xl flex items-center justify-center mb-6"><AlertTriangle className="w-8 h-8 text-red-500" /></div>
+            <h2 className="text-xl font-black uppercase mb-2 tracking-tight">¿Borrar archivo?</h2>
+            <p className="text-sm opacity-60 mb-8 leading-relaxed italic">"{deleteModal.name}"</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteModal({ show: false, id: null, name: "" })} className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase ${isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Cancelar</button>
+              <button onClick={confirmDelete} className="flex-1 py-4 bg-red-600 text-white rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-red-200">Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-4xl mx-auto w-full flex-grow">
+        
+        {/* BOTÓN Y MENÚ DE TEMAS */}
+        <div className="fixed top-6 right-6 z-50">
+          <button 
+            onClick={() => setShowPalette(!showPalette)}
+            className={`p-3 ${isDark ? 'bg-slate-700 border-slate-600 hover:bg-slate-600' : 'bg-white border-slate-200 hover:bg-slate-50'} border rounded-full shadow-lg hover:scale-110 transition-all ${theme.text}`}
+          >
+            <Palette className="w-6 h-6" />
+          </button>
+
+          {showPalette && (
+            <div className={`absolute right-0 mt-4 p-6 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-100 text-slate-900'} border rounded-3xl shadow-2xl w-72 animate-in zoom-in-95 duration-200`}>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xs font-black uppercase tracking-widest opacity-40">Estilo</h3>
+                <button onClick={() => setShowPalette(false)} className="hover:text-red-500 transition-colors">
+                  <X className="w-4 h-4 opacity-40" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <p className="text-[10px] font-bold uppercase opacity-40 mb-3">Color de Acento</p>
+                  <div className="flex gap-3 flex-wrap">
+                    {Object.keys(THEMES).map(k => (
+                      <button 
+                        key={k} 
+                        onClick={() => setCurrentTheme(k)}
+                        title={THEMES[k].name}
+                        className={`w-8 h-8 rounded-full ${THEMES[k].bg} ${currentTheme === k ? 'ring-4 ring-slate-400/50 scale-110 shadow-lg' : 'opacity-50 hover:opacity-100'} transition-all`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-bold uppercase opacity-40 mb-3">Fondo de Pantalla</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {BACKGROUNDS.map(bg => (
+                      <button 
+                        key={bg.id}
+                        onClick={() => setCurrentBg(bg)}
+                        className={`flex justify-between items-center px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${currentBg.id === bg.id ? (isDark ? 'border-slate-500 bg-slate-700' : 'border-slate-800 bg-slate-50') : (isDark ? 'border-slate-600 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50')}`}
+                      >
+                        {bg.name}
+                        {bg.id === 'dark' ? <Moon className="w-3 h-3" /> : <Sun className="w-3 h-3" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ALERTAS GENERALES */}
+        {errorMessage && (
+          <div className={`mb-6 p-4 ${isDark ? 'bg-orange-900/40 text-orange-200 border-orange-800' : 'bg-orange-50 text-orange-800 border-orange-500'} border-l-4 rounded-xl flex items-center justify-between text-xs font-bold uppercase`}>
+            <div className="flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-orange-500" /> {errorMessage}</div>
+            <button onClick={() => setErrorMessage("")}><X className="w-4 h-4 hover:text-orange-700" /></button>
           </div>
         )}
 
         {!isConnected && (
-          <div className="mb-8 p-4 bg-white border-l-4 border-red-500 rounded-xl shadow-sm flex items-center gap-3 text-red-600 animate-pulse font-bold text-xs uppercase">
-            <WifiOff className="w-5 h-5" /> Servidor Central fuera de línea (IP: {window.location.hostname})
+          <div className={`mb-8 p-4 ${isDark ? 'bg-red-900/30 border-red-800 text-red-300' : 'bg-red-50 border-red-500 text-red-600'} border-l-4 rounded-xl flex items-center gap-3 animate-pulse text-xs font-bold uppercase`}>
+            <WifiOff className="w-5 h-5" /> Nodo central desconectado (IP: {window.location.hostname})
           </div>
         )}
 
-        <header className="flex flex-col md:flex-row items-center justify-between gap-6 mb-12">
-          <div className="flex items-center gap-4">
-            <div className="bg-black p-3 rounded-2xl shadow-xl transform transition-transform hover:rotate-3">
-              <Folder className="w-8 h-8 text-white" />
+        <header className="flex flex-col md:flex-row items-center justify-between gap-6 mb-12 text-left mt-8 md:mt-0">
+          <div className="flex items-center gap-4 w-full">
+            <div className={`${isDark ? 'bg-slate-200' : 'bg-black'} p-3 rounded-2xl shadow-xl transform transition-transform hover:rotate-3`}>
+              <Folder className={`${isDark ? 'text-slate-800' : 'text-white'} w-8 h-8`} />
             </div>
             <div>
-              <h1 className="text-2xl font-black tracking-tight uppercase leading-none mb-1">Cerebro Local</h1>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 flex items-center gap-1">
-                <BrainCircuit className="w-3 h-3 text-emerald-500" /> Red: {window.location.hostname}
-              </p>
+              <h1 className={`text-2xl font-black tracking-tight uppercase leading-none mb-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>Datei</h1>
+              <div className="flex items-center gap-3 mt-1">
+                {/* IP DEL HOST */}
+                <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest flex items-center gap-1">
+                  <BrainCircuit className={`w-3 h-3 ${theme.text}`} /> Host: {window.location.hostname}
+                </p>
+                
+                {/* SEPARADOR VISUAL */}
+                <div className={`w-px h-2 ${isDark ? 'bg-slate-700' : 'bg-slate-200'}`} />
+                
+                {/* AUTORES */}
+                <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest flex items-center gap-1">
+                  <Users className={`w-3 h-3 ${theme.text}`} /> {autores}
+                </p>
+              </div>
             </div>
           </div>
 
-          <label className={`flex items-center gap-2 px-8 py-3.5 bg-black text-white rounded-full text-xs font-bold hover:bg-slate-800 transition-all cursor-pointer shadow-lg active:scale-95 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+          <label className={`flex items-center gap-2 px-8 py-3.5 ${isDark ? 'bg-slate-200 text-slate-800 hover:bg-white' : 'bg-black text-white hover:bg-slate-800'} rounded-full text-xs font-bold transition-all cursor-pointer shadow-lg active:scale-95 whitespace-nowrap ${isUploading ? 'opacity-50' : ''}`}>
             {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-            <span>{isUploading ? 'INDEXANDO IA...' : 'SUBIR DOCUMENTO'}</span>
-            <input type="file" className="hidden" onChange={handleFileUpload} ref={fileInputRef} disabled={isUploading} />
+            <span>{isUploading ? 'PROCESANDO IA...' : 'SUBIR DOCUMENTO'}</span>
+            <input type="file" className="hidden" onChange={(e) => processUpload(e.target.files[0])} ref={fileInputRef} disabled={isUploading} />
           </label>
         </header>
 
-        {/* Barra de búsqueda */}
+        {/* BUSCADOR DINÁMICO */}
         <div className="relative mb-3 group">
-          <Search className={`absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isSearching ? 'text-blue-500 animate-pulse' : 'text-slate-300'}`} />
-          <input
+          <Search className={`absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isSearching ? theme.text + ' animate-pulse' : 'text-slate-400'}`} />
+          <input 
             type="text"
-            placeholder="Busca por intención (ej: 'gastos de luz')..."
-            className="w-full pl-16 pr-8 py-6 bg-white border-none rounded-[28px] text-sm shadow-2xl focus:ring-4 focus:ring-blue-50 transition-all outline-none"
+            placeholder="Busca por intención o nombre..."
+            className={`w-full pl-16 pr-8 py-6 ${currentBg.input} border-none rounded-[28px] text-sm shadow-xl focus:ring-2 ${theme.ring} transition-all outline-none ${isDark ? 'text-white placeholder:text-slate-500 shadow-black/20' : 'text-slate-700 shadow-slate-200/50'}`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
-        {/* ───────────── NUEVO: botón ordenar bajo la barra, a la derecha */}
-        <div className="relative flex justify-end mb-8">
-          <button
-            onClick={() => setSortMenuOpen(o => !o)}
-            className="flex items-center gap-2 px-4 py-2 bg-white rounded-full text-xs font-bold uppercase tracking-widest text-slate-500 shadow hover:bg-slate-50"
-          >
-            <ArrowUpDown className="w-4 h-4" />
-            Ordenar
-          </button>
+        {/* CONTROLES DE ORDENACIÓN Y FILTROS */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+          
+          {/* Filtros de formato */}
+          <div className="flex items-center gap-3 overflow-x-auto pb-2 no-scrollbar w-full md:w-auto">
+            <Filter className="w-4 h-4 text-slate-400 ml-2 shrink-0" />
+            {['todos', 'pdf', 'docx', 'xlsx', 'txt', 'csv'].map((tipo) => (
+              <button
+                key={tipo}
+                onClick={() => setActiveFilter(tipo)}
+                className={`px-5 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap ${
+                  activeFilter === tipo 
+                  ? `${theme.bg} text-white shadow-lg ${isDark ? 'shadow-black/40' : theme.shadow} scale-105` 
+                  : `${isDark ? 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300'} border`
+                }`}
+              >
+                {tipo}
+              </button>
+            ))}
+          </div>
 
-          {sortMenuOpen && (
-            <div className="absolute right-0 top-12 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden text-xs font-bold uppercase tracking-widest z-10">
-              <button
-                className="block w-full text-left px-5 py-3 hover:bg-slate-50"
-                onClick={() => handleSortClick('title')}
-              >
-                Ordenar por título {sortBy === 'title' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
-              </button>
-              <button
-                className="block w-full text-left px-5 py-3 hover:bg-slate-50"
-                onClick={() => handleSortClick('date')}
-              >
-                Ordenar por fecha {sortBy === 'date' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
-              </button>
-              <button
-                className="block w-full text-left px-5 py-3 hover:bg-slate-50"
-                onClick={() => handleSortClick('size')}
-              >
-                Ordenar por tamaño {sortBy === 'size' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
-              </button>
-            </div>
-          )}
-        </div>
-        {/* ───────────── */}
-
-        <div className="flex items-center gap-3 mb-12 overflow-x-auto pb-2 no-scrollbar">
-          <Filter className="w-4 h-4 text-slate-300 ml-2" />
-          {['todos', 'pdf', 'docx', 'xlsx', 'txt', 'csv'].map((tipo) => (
-            <button key={tipo} onClick={() => setActiveFilter(tipo)} className={`px-5 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap ${activeFilter === tipo ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'bg-white text-slate-400 hover:bg-slate-100 border border-slate-100'}`}>
-              {tipo}
+          {/* Menú Ordenación Adaptativo */}
+          <div className="relative flex justify-end shrink-0">
+            <button
+              onClick={() => setSortMenuOpen(o => !o)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm border ${
+                isDark ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700' : 'bg-white text-slate-500 border-slate-100 hover:bg-slate-50'
+              }`}
+            >
+              <ArrowUpDown className={`w-3 h-3 ${sortBy ? theme.text : ''}`} />
+              Ordenar {sortBy && <span className={theme.text}>({sortBy === 'title' ? 'Título' : sortBy === 'date' ? 'Fecha' : 'Tamaño'})</span>}
             </button>
-          ))}
+
+            {sortMenuOpen && (
+              <div className={`absolute right-0 top-12 rounded-xl shadow-xl border overflow-hidden text-xs font-bold uppercase tracking-widest z-10 w-48 ${
+                isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'
+              }`}>
+                <button
+                  className={`block w-full text-left px-5 py-3 transition-colors ${isDark ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                  onClick={() => handleSortClick('title')}
+                >
+                  Título {sortBy === 'title' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                </button>
+                <button
+                  className={`block w-full text-left px-5 py-3 transition-colors border-t ${isDark ? 'border-slate-700 text-slate-300 hover:bg-slate-700' : 'border-slate-50 text-slate-600 hover:bg-slate-50'}`}
+                  onClick={() => handleSortClick('date')}
+                >
+                  Fecha {sortBy === 'date' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                </button>
+                <button
+                  className={`block w-full text-left px-5 py-3 transition-colors border-t ${isDark ? 'border-slate-700 text-slate-300 hover:bg-slate-700' : 'border-slate-50 text-slate-600 hover:bg-slate-50'}`}
+                  onClick={() => handleSortClick('size')}
+                >
+                  Tamaño {sortBy === 'size' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="space-y-6">
+        {/* LISTA DE ARCHIVOS */}
+        <div className="space-y-6 pb-12">
           {listaAVisualizar.map((item, idx) => (
-            <div key={item.id || idx} className="bg-white rounded-[32px] border border-slate-100 p-8 shadow-sm hover:shadow-xl transition-all group">
+            <div key={item.id || idx} className={`${currentBg.card} rounded-[32px] border ${currentBg.border} p-8 shadow-sm hover:shadow-xl transition-all group overflow-hidden`}>
               <div className="flex items-start justify-between mb-6 text-left">
                 <div className="flex items-center gap-5">
-                  <div className="p-4 bg-slate-50 rounded-2xl group-hover:bg-blue-50 transition-colors">
-                    <FileText className="w-7 h-7 text-slate-400 group-hover:text-blue-600" />
+                  <div className={`p-4 ${isDark ? 'bg-slate-700' : 'bg-slate-50'} rounded-2xl transition-colors`}>
+                    {getFileIcon(item.extension || item.name?.split('.').pop())}
                   </div>
                   <div className="flex flex-col">
-                    <h3 className="text-lg font-black text-slate-800 leading-tight mb-2">{item.name || item.archivo}</h3>
+                    <h3 className={`text-lg font-black leading-tight mb-2 truncate max-w-xs md:max-w-md ${isDark ? 'text-white' : 'text-slate-800'}`}>{item.name || item.archivo}</h3>
                     <div className="flex flex-wrap items-center gap-3">
-                      <span className="text-[10px] font-black bg-[#1e293b] text-white px-3 py-1 rounded-lg uppercase tracking-widest">{item.type || 'Documento'}</span>
+                      <span className={`text-[10px] font-black ${isDark ? 'bg-slate-600 text-slate-100' : 'bg-slate-900 text-white'} px-2 py-0.5 rounded-lg uppercase tracking-widest`}>{item.type || 'Documento'}</span>
                       {!isQuerying && (
-                        <>
-                          <div className="flex items-center gap-1 text-[10px] text-slate-400 font-bold uppercase tracking-tighter"><Clock className="w-3 h-3" /> {formatFecha(item.createdAt)}</div>
-                          <div className="flex items-center gap-1 text-[10px] text-slate-300 font-bold uppercase tracking-tighter"><HardDrive className="w-3 h-3" /> {item.size}</div>
-                        </>
+                        <div className="flex items-center gap-4 text-[10px] opacity-40 font-bold uppercase">
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {formatFechaOriginal(item.createdAt)}</span>
+                          <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" /> {item.size}</span>
+                        </div>
                       )}
-                      {item.score && (
-                        <span className="text-[10px] font-bold bg-[#dcfce7] text-[#166534] px-3 py-1 rounded-lg flex items-center gap-1">
+                      {item.score && item.score < 1.0 && (
+                        <span className={`text-[10px] font-bold ${isDark ? 'bg-green-900/40 text-green-400' : 'bg-green-50 text-green-700'} px-3 py-1 rounded-lg flex items-center gap-1 animate-in zoom-in duration-300`}>
                           🎯 {Math.round(item.score * 100)}% relevancia
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
-
                 <div className="flex gap-2">
-                  <button onClick={() => handleOpenFile(item.id)} title="Abrir en servidor" className="p-2.5 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Eye className="w-5 h-5" /></button>
-                  <button onClick={() => deleteFile(item.id)} className="p-2.5 bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-5 h-5" /></button>
+                  <button onClick={() => handleOpenFile(item.id)} className={`p-2.5 opacity-0 group-hover:opacity-100 transition-all ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-blue-500'}`} title="Abrir en ordenador"><Eye className="w-5 h-5" /></button>
+                  <button onClick={() => setDeleteModal({ show: true, id: item.id, name: item.name })} className={`p-2.5 opacity-0 group-hover:opacity-100 transition-all ${isDark ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-500'}`} title="Borrar archivo"><Trash2 className="w-5 h-5" /></button>
                 </div>
               </div>
 
+              {/* RESUMEN IA */}
               {item.summary && (
-                <div className="bg-[#F8FAFC] rounded-[20px] p-5 mb-5 border-l-4 border-blue-600 shadow-inner">
-                  <div className="flex items-center gap-2 mb-3 text-blue-600"><Quote className="w-4 h-4" /><span className="text-[10px] font-black uppercase tracking-widest">Resumen IA (Llama 3)</span></div>
-                  <p className="text-sm text-slate-600 font-medium italic leading-relaxed text-left">"{item.summary}"</p>
+                <div className={`${isDark ? 'bg-slate-700/40 border-slate-600' : 'bg-slate-50 border-slate-100'} rounded-[20px] p-5 mb-3 border-l-4 ${theme.border} shadow-inner text-left`}>
+                  <div className={`flex items-center gap-2 mb-3 ${theme.text}`}>
+                    <Quote className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Resumen IA</span>
+                  </div>
+                  <p className={`text-sm ${isDark ? 'text-slate-200' : 'text-slate-600'} font-medium italic leading-relaxed`}>"{item.summary}"</p>
                 </div>
               )}
 
+              {/* PUNTOS CLAVE (Ocultos al buscar) */}
+              {!isQuerying && item.keywords && item.keywords.length > 0 && (
+                <div className="px-5 pb-2">
+                  <div className="flex flex-wrap gap-x-6 gap-y-2">
+                    {item.keywords.map((tag, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className={`w-1.5 h-1.5 rounded-full ${theme.bg}`} />
+                        <span className={`text-[10px] font-black uppercase tracking-tighter ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{tag}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SNIPPET DE BÚSQUEDA */}
               {isQuerying && item.snippet && (
-                <div className="mb-5 p-4 bg-[#fffbeb] border border-dashed border-[#fcd34d] rounded-xl text-sm text-[#92400e] text-left">
+                <div className={`mb-2 p-4 ${isDark ? 'bg-amber-900/30 border-amber-800 text-amber-100' : 'bg-amber-50 border-amber-200 text-amber-800'} border border-dashed rounded-xl text-sm text-left animate-in fade-in duration-500`}>
                   <strong>Fragmento relevante:</strong><br />
                   "...{item.snippet}..."
                 </div>
@@ -328,6 +480,18 @@ export default function App() {
           ))}
         </div>
       </div>
+
+      {/* FOOTER TECNOLÓGICO */}
+      <footer className={`mt-auto py-10 border-t ${isDark ? 'border-slate-800' : 'border-slate-100'} text-center opacity-40`}>
+        <div className="max-w-4xl mx-auto px-6">
+          <div className="flex flex-wrap justify-center items-center gap-6 mb-4">
+            <div className="flex items-center gap-2"><Cpu className={`w-4 h-4 ${theme.text}`} /><span className="text-[10px] font-bold uppercase tracking-widest">Meta Llama 3</span></div>
+            <div className="flex items-center gap-2"><Sparkles className={`w-4 h-4 ${theme.text}`} /><span className="text-[10px] font-bold uppercase tracking-widest">RAG Engine</span></div>
+            <div className="flex items-center gap-2"><BrainCircuit className={`w-4 h-4 ${theme.text}`} /><span className="text-[10px] font-bold uppercase tracking-widest">FastAPI + React</span></div>
+          </div>
+          <p className="text-[9px] font-black uppercase tracking-[0.4em]">HackUDC 2026 • Private Cloud Architecture</p>
+        </div>
+      </footer>
     </div>
   );
 }
