@@ -191,6 +191,11 @@ export default function App() {
     setSortMenuOpen(false);
   };
 
+  const clearSort = () => {
+    setSortBy(null);
+    setSortMenuOpen(false);
+  };
+
   const formatFechaOriginal = (isoStr) => {
     if (!isoStr) return "N/A";
     const d = new Date(isoStr);
@@ -406,6 +411,16 @@ export default function App() {
                 >
                   Tamaño {sortBy === 'size' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
                 </button>
+                
+                {/* BOTÓN PARA QUITAR ORDEN */}
+                {sortBy && (
+                  <button
+                    className={`block w-full text-left px-5 py-3 transition-colors border-t font-black ${isDark ? 'border-slate-700 text-red-400 hover:bg-slate-700' : 'border-slate-50 text-red-500 hover:bg-slate-50'}`}
+                    onClick={clearSort}
+                  >
+                    Quitar orden <X className="inline w-3 h-3 ml-1 mb-0.5" />
+                  </button>
+                )}
               </div>
             )}
           </div>
